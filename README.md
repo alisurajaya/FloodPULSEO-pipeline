@@ -13,7 +13,7 @@ FloodPULSEO is a machine-learning-ready dataset that pairs **566,669** co-regist
 | Sentinel-1 SAR | `COPERNICUS/S1_GRD` | 10 m | VV, VH |
 | Sentinel-2 indices | `COPERNICUS/S2_SR_HARMONIZED` | 10 m | NDVI, NDBI |
 | MERIT Hydro | `MERIT/Hydro/v1_0_1` | 90 m | elevation, flow direction, UDA, HAND |
-| SoilGrids | `OpenLandMap/SOL` | 250 m | clay %, sand % |
+| SoilGrids | `projects/soilgrids-isric` | 250 m | clay %, sand % |
 | ESA WorldCover | `ESA/WorldCover/v200` | 10 m | permanent-water mask |
 | Precipitation | `NASA/GPM_L3/IMERG_V07` | ~11 km | 30 daily (mm/day) |
 | Soil moisture | `NASA/SMAP/SPL4SMGP/008` | ~9 km | 30 daily (m³/m³) |
@@ -41,7 +41,7 @@ The dataset is delivered as patches. Each flood event is cut into square, non-ov
 |---|---|---|---|
 | `input_10m.tif` | 5 | 256×256 | S1 VV, S1 VH, NDVI, NDBI, permanent water |
 | `input_80m.tif` | 5 | 32×32 | MERIT elevation, flow-dir sin, flow-dir cos, UDA, HAND |
-| `input_160m.tif` | 2 | 16×16 | SoilGrids clay %, sand % |
+| `input_160m.tif` | 2 | 16×16 | ISRIC SoilGrids v2.0 clay %, sand % |
 | `input_2560m.tif` | 2N | 1×1 | precipitation (N days), soil moisture (N days) |
 | `flood_mask.tif` | 1 | 256×256 | flood label (1 = flooded) |
 
@@ -138,7 +138,7 @@ data/
       S1_VV_VH.tif                       2 bands  Sentinel-1 VV/VH
       S2_NDVI_NDBI.tif                   2 bands  NDVI + NDBI
       MERIT.tif                          4 bands  elevation, flow direction, UDA, HAND
-      Soil.tif                           2 bands  clay + sand (SoilGrids)
+      Soil.tif                           2 bands  clay + sand (ISRIC SoilGrids v2.0)
       ESA_WorldCover_PermanentWater.tif  1 band   permanent water mask (ESA WorldCover)
       Precipitation_{first}_{last}.tif   N bands  GPM-IMERG daily (N days pre-event)
       SoilMoisture_{first}_{last}.tif    N bands  SMAP daily (N days pre-event)
@@ -194,7 +194,7 @@ The columns are below.
 
 ## Data sources and credits
 
-Flood labels and event metadata come from the [Copernicus Emergency Management Service Rapid Mapping](https://emergency.copernicus.eu/) service. The satellite and geospatial layers are accessed through [Google Earth Engine](https://earthengine.google.com/): Sentinel-1 and Sentinel-2 (ESA/Copernicus), MERIT Hydro, SoilGrids (OpenLandMap), ESA WorldCover, GPM IMERG and SMAP (NASA). Basin boundaries are HydroBASINS Pfafstetter Level-5, and climate zones follow the Köppen-Geiger classification.
+Flood labels and event metadata come from the [Copernicus Emergency Management Service Rapid Mapping](https://emergency.copernicus.eu/) service. The satellite and geospatial layers are accessed through [Google Earth Engine](https://earthengine.google.com/): Sentinel-1 and Sentinel-2 (ESA/Copernicus), MERIT Hydro, ISRIC SoilGrids v2.0, ESA WorldCover, GPM IMERG and SMAP (NASA). Basin boundaries are HydroBASINS Pfafstetter Level-5, and climate zones follow the Köppen-Geiger classification.
 
 ## Citation
 

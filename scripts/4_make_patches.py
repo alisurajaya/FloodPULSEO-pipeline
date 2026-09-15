@@ -13,7 +13,7 @@ and is written at four resolutions plus the label, five files in all:
 
   patch_NNNN_input_10m.tif    256x256, 5 bands   S1 VV, S1 VH, NDVI, NDBI, permanent water
   patch_NNNN_input_80m.tif     32x32 , 5 bands   MERIT elevation, flowdir sin, flowdir cos, UDA, HAND
-  patch_NNNN_input_160m.tif    16x16 , 2 bands   SoilGrids clay, sand
+  patch_NNNN_input_160m.tif    16x16 , 2 bands   ISRIC SoilGrids v2.0 clay, sand
   patch_NNNN_input_2560m.tif    1x1  , 2N bands  Precipitation (N) + SoilMoisture (N), N=30 default
   patch_NNNN_flood_mask.tif   256x256, 1 band    CEMS flood extent (1 = flooded)
 
@@ -214,7 +214,7 @@ def build_stack_80m(gee: Path, ref_bounds, ref_crs):
 
 
 def build_stack_160m(gee: Path, ref_bounds, ref_crs):
-    """SoilGrids clay, sand -> (2, H, W) at 160 m."""
+    """ISRIC SoilGrids v2.0 clay, sand -> (2, H, W) at 160 m."""
     w, h, transform = _grid(ref_bounds, RES_160M)
     stack = np.full((2, h, w), NODATA, dtype=np.float32)
     soil = gee / F_SOIL

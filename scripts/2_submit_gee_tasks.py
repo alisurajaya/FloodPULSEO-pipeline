@@ -11,7 +11,7 @@ continue with Script 3 preprocessing.
   S1_VV_VH.tif        2 bands   Sentinel-1 VV/VH median composite (30-90 days pre-event)
   land_cover.tif      2 bands   NDVI + NDBI from S2 with temporal fallback (both at 10m)
   MERIT.tif           4 bands   MERIT Hydro (elevation, flow dir, UDA, HAND)
-  Soil.tif            2 bands   SoilGrids topsoil clay + sand
+  Soil.tif            2 bands   ISRIC SoilGrids v2.0 topsoil clay + sand
   ESA_WorldCover_PermanentWater.tif  1 band  ESA WorldCover 2021 permanent water
   Precipitation_{first}_{last}.tif  30 bands  GPM-IMERG V07 daily precip (30 antecedent days, event excluded)
   SoilMoisture_{first}_{last}.tif   30 bands  SMAP L4 daily soil moisture (30 antecedent days, NASA/SMAP/SPL4SMGP/008)

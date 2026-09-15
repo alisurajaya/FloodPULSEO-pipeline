@@ -76,12 +76,26 @@ def build_merit(region):
 
 
 def build_soil(region):
-    """SoilGrids topsoil (0 cm) clay + sand percentage."""
+    """
+    ISRIC SoilGrids v2.0 topsoil (0-5 cm) clay + sand percentage.
+
+    This was OpenLandMap until 2026-09. OpenLandMap is CC-BY-SA 4.0, and
+    share-alike cannot be redistributed inside a CC BY 4.0 dataset, so the layer
+    was moved to ISRIC SoilGrids v2.0 (CC BY 4.0). The two are different products
+    by different teams - OpenGeoHub and ISRIC - which is easy to miss because
+    Hengl led SoilGrids 2017 before moving to OpenGeoHub.
+
+    Two consequences of the switch, both deliberate:
+      - SoilGrids stores g/kg in int16, so values are divided by 10 to give the
+        percent the released patches use.
+      - SoilGrids masks water instead of gap-filling it, so coastal AOIs now
+        carry genuine nodata where OpenLandMap invented a soil value.
+    """
     import ee
-    clay = (ee.Image("OpenLandMap/SOL/SOL_CLAY-WFRACTION_USDA-3A1A1A_M/v02")
-            .select("b0").rename("Clay"))
-    sand = (ee.Image("OpenLandMap/SOL/SOL_SAND-WFRACTION_USDA-3A1A1A_M/v02")
-            .select("b0").rename("Sand"))
+    clay = (ee.Image("projects/soilgrids-isric/clay_mean")
+            .select("clay_0-5cm_mean").divide(10).rename("Clay"))
+    sand = (ee.Image("projects/soilgrids-isric/sand_mean")
+            .select("sand_0-5cm_mean").divide(10).rename("Sand"))
     return ee.Image.cat([clay, sand]).unmask(-9999)
 
 
@@ -166,7 +180,7 @@ CORE_LAYERS: List[LayerSpec] = [
     LayerSpec(
         key="Soil", filename="Soil.tif", kind="static",
         bands=2, resolution_m=250.0, builder=build_soil,
-        description="SoilGrids topsoil clay % + sand % (0-5 cm).",
+        description="ISRIC SoilGrids v2.0 topsoil clay % + sand % (0-5 cm).",
     ),
     LayerSpec(
         key="ESA_PW", filename="ESA_WorldCover_PermanentWater.tif", kind="static",
