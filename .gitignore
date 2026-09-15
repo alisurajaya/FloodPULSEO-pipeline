@@ -21,3 +21,6 @@ data_v1fix/
 data_paper/
 *.BAK
 config_local.py.*
+
+# MERIT_data_prep local test scratch (not part of the tool)
+MERIT_data_prep/_test/
