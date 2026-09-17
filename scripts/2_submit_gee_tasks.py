@@ -9,7 +9,7 @@ continue with Script 3 preprocessing.
 
 7 multi-band GeoTIFFs per activation (7 GEE tasks):
   S1_VV_VH.tif        2 bands   Sentinel-1 VV/VH median composite (30-90 days pre-event)
-  land_cover.tif      2 bands   NDVI + NDBI from S2 with temporal fallback (both at 10m)
+  S2_NDVI_NDBI.tif    2 bands   NDVI + NDBI from S2 with temporal fallback (both at 10m)
   MERIT.tif           4 bands   MERIT Hydro (elevation, flow dir, UDA, HAND)
   Soil.tif            2 bands   ISRIC SoilGrids v2.0 topsoil clay + sand
   ESA_WorldCover_PermanentWater.tif  1 band  ESA WorldCover 2021 permanent water
@@ -86,15 +86,18 @@ Modes:
 
 Downloads land in: data/GEE_exports/{EMSR_code}/{act_folder_name}/{layer}.tif
 Then run Script 3 to validate exports and produce the catalog.
+
+Options:
+  --limit N          download layers for at most N activations, then stop.
+                     Use it for a first trial run: every layer already on disk
+                     is kept, so a later run without --limit resumes from here.
+  --update-tracking  only refresh 2_gee_export_status.csv, download nothing.
 """
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 SUBMIT_TO_GEE    = "yes"             # yes or no - whether to submit tasks to GEE
 # Temporal-layer length (precip / soil moisture days) and which layers to export
 # are now set in config.py (N_DAYS_OVERRIDE, LAYER_TOGGLES).
-
-# TEST MODE: Process only first activation folder (for testing)
-TEST_MODE = False                   # Set to True to process only first valid activation
 
 # Sentinel-1: progressive temporal windows (days before event)
 # Will try 15d, then 30d, then 45d, then 60d to achieve target coverage
@@ -1331,8 +1334,15 @@ def submit_for_activation(act_folder: Path, download_tracker: DownloadTracker) -
 def main():
     parser = argparse.ArgumentParser(description="Submit GEE export tasks for flood activations")
     parser.add_argument('--update-tracking', action='store_true',
-                       help='Only update download tracking CSV (no submissions)')
+                       help='Only update download tracking CSV (no downloads)')
+    parser.add_argument('--limit', type=int, metavar='N', default=None,
+                       help='Download layers for at most N activations, then '
+                            'stop. Use for a first trial run: the pipeline is '
+                            'resumable, so a later run without --limit '
+                            'continues where this one stopped.')
     args = parser.parse_args()
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be 1 or greater")
 
     submit_to_gee = (SUBMIT_TO_GEE.lower() == 'yes')
     status_only = args.update_tracking
@@ -1396,8 +1406,9 @@ def main():
 
         print(f"\nFound {len(folders)} activation folders")
 
-        if TEST_MODE:
-            print(f"  TEST_MODE enabled: Processing ONLY first valid activation folder (year >= 2017)")
+        if args.limit:
+            print(f"  --limit {args.limit}: stopping after {args.limit} "
+                  f"activation(s) that still need layers")
 
         total_submitted = 0
         total_skipped   = 0
@@ -1424,9 +1435,6 @@ def main():
 
             if not missing:
                 total_skipped += 1
-                if TEST_MODE and processed_count > 0:
-                    print(f"  TEST_MODE: Stopping after processing first activation")
-                    break
                 continue
 
             print(f"\n[{i}/{len(folders)}] {act_name}")
@@ -1439,9 +1447,13 @@ def main():
 
             processed_count += 1
 
-            # In TEST_MODE, stop after processing first valid activation
-            if TEST_MODE:
-                print(f"\n  TEST_MODE: Processed first activation folder. Stopping.")
+            # --limit N: stop after N activations have been processed. Intended
+            # for a first trial run on a machine that has not run the pipeline
+            # before; the layers already downloaded are kept, so re-running
+            # without the flag continues where this left off.
+            if args.limit and processed_count >= args.limit:
+                print(f"\n  --limit {args.limit} reached: stopping after "
+                      f"{processed_count} activation(s).")
                 break
 
         # ── Summary ───────────────────────────────────────────────────────────

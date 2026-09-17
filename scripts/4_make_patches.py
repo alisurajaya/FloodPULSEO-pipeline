@@ -25,16 +25,21 @@ from new flooding but the label stays the raw observed inundation.
 MERIT flow direction (D8) is encoded as (sin, cos) of its compass angle so the
 circular variable has no artificial discontinuity at 0/360 degrees.
 
+All four input grids and the label share one origin and use exact 10 / 80 / 160 /
+2560 m pixels, so the five files of a patch are pixel-aligned and each covers the
+same PATCH_SIZE_M footprint. See _grid() for why the transform is built from the
+nominal resolution rather than from the AOI extent.
+
 Input
   data/GEE_exports/{EMSR}/{folder}/  S1_VV_VH, S2_NDVI_NDBI, MERIT, Soil,
                                      ESA_WorldCover_PermanentWater, Precipitation,
-                                     SoilMoisture, flood_mask  (all from Steps 2-4)
+                                     SoilMoisture, flood_mask  (all from Steps 2-3)
   data/metadata/released_events_metadata.csv    the catalog (one row per event)
 
 Output
   data/patches/{EMSR}/{folder}/patch_NNNN_*.tif
   data/metadata/released_patches_metadata.csv    one row per patch (split added in Step 5)
-  data/metadata/5_patch_validation_issues.csv    QC findings, if any
+  data/metadata/4_patch_validation_issues.csv    QC findings, if any
 
 Usage
   python scripts/4_make_patches.py
@@ -143,14 +148,34 @@ def _reproject_band(src, band_idx, dst, transform, crs, resampling):
 
 
 def _grid(ref_bounds, res) -> Tuple[int, int, Affine]:
+    """
+    Pixel grid for one resolution, anchored to the event's top-left corner.
+
+    The transform is built from the NOMINAL resolution, not from the AOI span.
+    Deriving it with from_bounds(...) instead stretches the pixels to fill the
+    extent exactly, so a 2560 m cell became e.g. 2576.25 m and an 80 m cell
+    80.19 m. Because every stack was stretched by a different amount, the
+    coarse stacks drifted away from the 10 m grid as the patch index grew:
+    measured offsets reached ~2 km, i.e. the precipitation / soil-moisture cell
+    of the last patches described a NEIGHBOURING tile's ground.
+
+    Anchoring each grid at (minx, maxy) with exact `res`-sized pixels makes all
+    four resolutions share one origin, and because 10, 80, 160 and 2560 all
+    divide PATCH_SIZE_M the sub-grids nest exactly. The grid may now extend a
+    fraction of a cell past the AOI's bottom-right; those cells read as nodata
+    and fall outside the patch tiling, which is bounded by the 10 m grid.
+
+    At least one cell in each direction: an AOI narrower than one cell of the
+    coarsest stack (2560 m) would otherwise floor to 0. Such an event yields no
+    full patch anyway and is dropped by the caller, but the grid must still be
+    constructible to get there.
+    """
     minx, miny, maxx, maxy = ref_bounds
-    # At least one cell in each direction: an AOI narrower than one cell of the
-    # coarsest stack (2560 m) would otherwise floor to 0 and from_bounds would
-    # divide by zero. Such an event yields no full patch anyway and is dropped
-    # by the caller, but the grid must still be constructible to get there.
-    width  = max(1, int((maxx - minx) / res))
-    height = max(1, int((maxy - miny) / res))
-    return width, height, from_bounds(minx, miny, maxx, maxy, width, height)
+    width  = max(1, int(round((maxx - minx) / res)))
+    height = max(1, int(round((maxy - miny) / res)))
+    # Anchored at the top-left corner, exact `res` pixels: Affine(a, b, c, d, e, f)
+    # = (x-size, 0, x-origin, 0, -y-size, y-origin).
+    return width, height, Affine(res, 0.0, minx, 0.0, -res, maxy)
 
 
 def build_stack_10m(gee: Path, ref_bounds, ref_crs):

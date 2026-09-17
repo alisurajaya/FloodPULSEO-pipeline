@@ -28,15 +28,24 @@ per-pixel area, so flooded_area_km2 <= aoi_area_km2 always holds and both share
 one definition.
 
 The world continents layer and the Koppen raster are not in the repository; they
-are downloaded on first run, the same way HydroBASINS is fetched.
+are downloaded on first run, the same way HydroBASINS is fetched. Budget roughly
+3.3 GB for HydroBASINS Level-12 and ~25 MB for the other two, cached under data/
+and fetched once however many events are processed later.
+
+If one of those three downloads fails the run does NOT abort: the catalog is still
+built and the affected column (continent or climate) is left empty for every event,
+with a warning. Re-running this step once the download succeeds fills the column in
+place. Note that Step 5 balances the split per continent, so re-run before splitting
+rather than after.
 
 The set of layers checked comes from config.py (enabled layers only), so a
 subset config or a custom temporal length never produces a "failed" event.
 
 Output files:
   data/GEE_exports/{folder}/flood_mask.tif   binary flood mask per event (1=flooded)
-  metadata/4_dataset_metadata.csv            final catalog (one row per cataloged event)
-  metadata/4_missing_layers_report.csv       per event, which enabled layers are absent
+  metadata/3_dataset_metadata.csv            events new in this run
+  metadata/released_events_metadata.csv      full accumulated catalog (one row per event)
+  metadata/3_missing_layers_report.csv       per event, which enabled layers are absent
 
 Usage:
   python scripts/3_gee_output_preprocessing.py
@@ -106,7 +115,11 @@ NE_SHP = CONTINENTS_DIR / "ne_110m_admin_0_countries.shp"
 
 # Beck et al. (2018) Koppen-Geiger present-day map at 0.0083 deg (~1 km). ~23 MB
 # tif inside a small zip on Figshare. Cite Beck et al. (2018) when using it.
-KOPPEN_URL = "https://figshare.com/ndownloader/files/12407516"  # Beck_KG_V1.zip
+# Must be the ndownloader.figshare.com host, NOT figshare.com/ndownloader/...
+# The latter now answers automated requests with "HTTP 202 Accepted" and an
+# empty body instead of the file, which silently produced a 0-byte zip and an
+# empty `climate` column for every event.
+KOPPEN_URL = "https://ndownloader.figshare.com/files/12407516"  # Beck_KG_V1.zip
 KOPPEN_TIF = CLIMATE_DIR / "Beck_KG_V1_present_0p0083.tif"
 
 # Natural Earth CONTINENT -> our catalog label.
@@ -597,6 +610,14 @@ def _download(url, dest, what):
     if expected and got != expected:
         part.unlink(missing_ok=True)
         raise IOError(f"truncated download: got {got} of {expected} bytes")
+    # An empty body passes the Content-Length check above whenever the server
+    # omits the header (e.g. a "202 Accepted" throttling response sends
+    # Content-Length: 0), so zero bytes has to be rejected on its own.
+    if got == 0:
+        part.unlink(missing_ok=True)
+        raise IOError(f"empty download: server returned 0 bytes "
+                      f"(HTTP {r.status_code}) - the source URL may be "
+                      f"throttling or may have moved")
     part.replace(dest)
     print("done")
 
@@ -771,13 +792,20 @@ def main():
             ne = ne.to_crs(4326)
         print(f"  ✓ Loaded {len(ne)} country polygons")
     except Exception as e:
-        print(f"  ! Could not load continents: {e} -- continent will be empty")
+        print(f"  ! Could not load continents: {e}")
+        print(f"  ! WARNING: the `continent` column will be EMPTY for every event")
+        print(f"  !          in this run. Step 5 balances the split per continent,")
+        print(f"  !          so re-run this step before splitting.")
     try:
         ensure_koppen()
         koppen = rasterio.open(KOPPEN_TIF)
         print("  ✓ Loaded Koppen-Geiger raster")
     except Exception as e:
-        print(f"  ! Could not load Koppen raster: {e} -- climate will be empty")
+        print(f"  ! Could not load Koppen raster: {e}")
+        print(f"  ! WARNING: the `climate` column will be EMPTY for every event")
+        print(f"  !          in this run. The catalog is otherwise complete, so")
+        print(f"  !          Steps 4 and 5 still work; re-run this step once the")
+        print(f"  !          download succeeds to fill the column in place.")
 
     # Load gee_tasks_record.csv
     print("\n[3/6] Loading gee_tasks_record.csv...")
@@ -931,7 +959,7 @@ def main():
 
     # The complete catalog is the accumulated record of every event ever
     # cataloged. Diff this run against it: an event whose folder_name is not yet
-    # in the complete catalog is new and goes to 4_dataset_metadata.csv; the
+    # in the complete catalog is new and goes to 3_dataset_metadata.csv; the
     # complete catalog is then refreshed to old rows plus this run's events.
     DATASET_METADATA_CSV.parent.mkdir(parents=True, exist_ok=True)
     existing = {}

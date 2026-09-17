@@ -344,7 +344,14 @@ def main():
     # write split into both metadata files
     df.to_csv(PATCH_CSV, index=False)
     if not ev.empty:
-        ev["split"] = ev["folder_name"].map(ev_split).fillna(ev.get("split"))
+        # Keep any split already recorded for events that are not in this run.
+        # `ev.get("split")` is None when the catalog has no split column yet
+        # (the first ever run), and pandas 2.x raises on .fillna(None), so the
+        # column has to be checked before it is used as the fill value.
+        assigned = ev["folder_name"].map(ev_split)
+        if "split" in ev.columns:
+            assigned = assigned.fillna(ev["split"])
+        ev["split"] = assigned
         ev.to_csv(EVENT_CSV, index=False)
 
     # three split index files

@@ -35,12 +35,21 @@ Skipped silently (not counted as failures):
   - Products with no PDF (not a delineation/monitoring map product)
   - Products with no event shapefile (reference/overview products)
 
+Date range: defaults to the full CEMS record used by the release
+(2017-01-01 to 2025-12-31). Narrow it per run with --start / --end rather than
+editing this file; a short window is the cheapest way to trial the pipeline:
+
+    python scripts/1_download_activations.py --start 2026-02-18 --end 2026-02-22
+
 Dependencies: requests, beautifulsoup4, PyMuPDF (fitz), urllib3
 """
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-DATE_START = "2026-02-15"   # TEST: window with real floods
-DATE_END   = "2026-04-30"   # TEST
+# Default window: the full CEMS rapid-mapping record used by the release.
+# Override per run with --start / --end rather than editing this file, e.g.
+#   python scripts/1_download_activations.py --start 2026-02-15 --end 2026-04-30
+DATE_START = "2017-01-01"
+DATE_END   = "2025-12-31"
 
 # Activations >= this number use the newer dashboard API for product listing.
 # Older ones are scraped from the HTML activation page.
@@ -1439,14 +1448,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--yes", "-y", action="store_true",
                         help="Skip confirmation prompt and download immediately")
+    parser.add_argument("--start", metavar="YYYY-MM-DD", default=DATE_START,
+                        help=f"First activation date to fetch (default {DATE_START})")
+    parser.add_argument("--end", metavar="YYYY-MM-DD", default=DATE_END,
+                        help=f"Last activation date to fetch (default {DATE_END})")
     args = parser.parse_args()
+
+    # A short window is the cheapest way to try the pipeline before committing
+    # to the full record, so the range is a flag rather than an edit to source.
+    date_start, date_end = args.start, args.end
+    for label, value in (("--start", date_start), ("--end", date_end)):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            parser.error(f"{label} must be YYYY-MM-DD, got {value!r}")
+    if date_start > date_end:
+        parser.error(f"--start ({date_start}) is after --end ({date_end})")
 
     tee = _setup_logging()
 
     print("=" * 72)
     print("  EMSR Flood Download + Activation Reorganizer  (Script 1)")
     print(f"  BASE_DIR   : {BASE_DIR}")
-    print(f"  Date range : {DATE_START}  →  {DATE_END}")
+    print(f"  Date range : {date_start}  →  {date_end}")
     print("=" * 72)
     print()
 
@@ -1455,10 +1479,10 @@ def main():
         d.mkdir(parents=True, exist_ok=True)
 
     # ── Step 1: fetch flood activations in date range ─────────────────────────
-    flood_acts = fetch_flood_codes_by_date(DATE_START, DATE_END)
+    flood_acts = fetch_flood_codes_by_date(date_start, date_end)
 
     if not flood_acts:
-        print(f"\n  No flood activations found between {DATE_START} and {DATE_END}.")
+        print(f"\n  No flood activations found between {date_start} and {date_end}.")
         return
 
     print(f"\n  Found {len(flood_acts)} flood activations:\n")

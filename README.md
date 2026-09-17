@@ -25,6 +25,7 @@ Every input precedes the flood, so the dataset poses flood **prediction** from a
 
 ---
 
+
 ## Coverage
 
 ![Global distribution of the 1,565 flood events, coloured by train, validation and test split, with insets over Europe, Central America, Madagascar and eastern Australia, and the breakdown by continent and Köppen climate zone](images/data_distributions.png)
@@ -45,7 +46,7 @@ The dataset is delivered as patches. Each flood event is cut into square, non-ov
 | `input_2560m.tif` | 2N | 1×1 | precipitation (N days), soil moisture (N days) |
 | `flood_mask.tif` | 1 | 256×256 | flood label (1 = flooded) |
 
-Only the 10 m layers are kept at their native resolution, as a 256×256 grid. The other layers are resampled so they integrate into a single multi-modal stack: each file covers the same 2.56 km × 2.56 km footprint, sampled to the grid that matches its resolution. Precipitation and soil moisture reduce to one cell per tile, one value per antecedent day, so `input_2560m` holds 2N bands. The released dataset uses 30 antecedent days, giving 60 bands, 30 precipitation days followed by 30 soil-moisture days. The number of days N is configurable in the pipeline (Section below), so a newly prepared dataset can use a different window.
+Only the 10 m layers are kept at their native resolution, as a 256×256 grid. The other layers are resampled so they integrate into a single multi-modal stack: each file covers exactly the same 2.56 km × 2.56 km footprint, sampled to the grid that matches its resolution. All four grids share one origin and use exact 10 m, 80 m, 160 m and 2560 m pixels, so the four stacks and the label are pixel-aligned: a given position in `input_10m` maps to the containing cell of every coarser file. Precipitation and soil moisture reduce to one cell per tile, one value per antecedent day, so `input_2560m` holds 2N bands. The released dataset uses 30 antecedent days, giving 60 bands, 30 precipitation days followed by 30 soil-moisture days. The number of days N is configurable in the pipeline (Section below), so a newly prepared dataset can use a different window.
 
 The permanent-water band lets a model tell pre-existing water from new flooding, while the label stays the observed CEMS inundation alone. MERIT flow direction is split into the sine and cosine of its compass angle so the circular variable has no discontinuity.
 
@@ -97,6 +98,22 @@ pip install -r requirements.txt
 earthengine authenticate
 ```
 
+Earth Engine ties API access to a Google Cloud project, so a project registered for
+Earth Engine is needed as well as the login above. If `ee.Initialize()` reports that
+no project is set, register one at
+[earthengine.google.com/signup](https://earthengine.google.com/signup) and select it:
+
+```bash
+earthengine set_project YOUR_PROJECT_ID
+```
+
+**Disk space.** Step 3 downloads HydroBASINS Level-12 on its first run, which is
+**about 3.3 GB** and dominates the footprint of a small run; the Natural Earth
+continents layer and the Köppen raster add roughly 25 MB. These are cached under
+`data/` and fetched once, however many events are processed afterwards. Budget for
+the event data on top: the three-event trial below comes to about 3.8 GB in total,
+of which 0.5 GB is the events themselves.
+
 ---
 
 ## Pipeline
@@ -107,13 +124,13 @@ Two files configure a run, and five numbered scripts execute it in order.
 |---|---|
 | `config.py` | **Edit first.** Enable or disable layers, set the daily-series length N, set the patch size |
 | `add_gee_layers.py` | Layer registry. Copy a template here to add a custom GEE layer |
-| **1** `_download_activations.py` | Download EMSR flood activations from Copernicus, reorganize into standardized folders |
-| **2** `_submit_gee_tasks.py` | Download the enabled layers per activation straight into `data/GEE_exports/` |
+| **1** `_download_activations.py` | Download EMSR flood activations from Copernicus, reorganize into standardized folders. `--start` / `--end` set the date range |
+| **2** `_submit_gee_tasks.py` | Download the enabled layers per activation straight into `data/GEE_exports/`. `--limit N` stops after N activations |
 | **3** `_gee_output_preprocessing.py` | Rasterize flood masks and permanent water, add continent, climate and area columns, build the catalog |
 | **4** `_make_patches.py` | Cut events into model-ready 2.56 km patch tiles |
 | **5** `_make_splits.py` | Assign the basin- and event-exclusive train/val/test split |
 
-Step 2 fetches each layer straight into `data/GEE_exports/` in tiled requests, so Step 3 can run as soon as Step 2 finishes. The download runs locally, so the machine stays busy for the length of the batch. Step 3 downloads a continents layer and a Köppen raster on its first run. Step 5 balances by patch count, so it runs after patching.
+Step 2 fetches each layer straight into `data/GEE_exports/` in tiled requests, so Step 3 can run as soon as Step 2 finishes. The download runs locally, so the machine stays busy for the length of the batch. Step 3 downloads HydroBASINS, a continents layer and a Köppen raster on its first run (see **Disk space** above). Step 5 balances by patch count, so it runs after patching.
 
 ```bash
 conda activate floodpulseo
@@ -123,6 +140,57 @@ python scripts/3_gee_output_preprocessing.py
 python scripts/4_make_patches.py
 python scripts/5_make_splits.py
 ```
+
+### Choosing what to build
+
+Step 1 fetches every CEMS flood activation in a date range, which defaults to the
+full record the release was built from, **2017-01-01 to 2025-12-31**. Narrow it with
+`--start` / `--end` instead of editing the script:
+
+```bash
+python scripts/1_download_activations.py --start 2024-01-01 --end 2024-12-31
+```
+
+Step 2 is the long step: it downloads seven layers per activation, and a large AOI
+can take several minutes per layer. `--limit N` stops after N activations so the
+whole pipeline can be exercised before committing to a full batch.
+
+### Try it first on a few events
+
+Every step is resumable — already-downloaded layers and already-written patches are
+skipped — so a trial run is not wasted work. Re-running Step 2 without `--limit`
+later simply continues from where the trial stopped.
+
+```bash
+conda activate floodpulseo
+python scripts/1_download_activations.py --start 2026-02-18 --end 2026-02-22 --yes
+python scripts/2_submit_gee_tasks.py --limit 3
+python scripts/3_gee_output_preprocessing.py
+python scripts/4_make_patches.py
+python scripts/5_make_splits.py
+```
+
+That takes roughly 30-60 minutes, most of it the one-off HydroBASINS download in
+Step 3, and produces a complete miniature of the dataset: patches on disk, a
+populated `released_events_metadata.csv`, and the three split files. Check
+`data/metadata/4_patch_validation_issues.csv` afterwards; an empty file (header
+only) means every patch passed its geometry and band checks.
+
+A split computed over a handful of events will not be 70/15/15. The split is
+exclusive by basin and by whole event, so with only a few events the constraints
+leave nothing to balance and everything may land in `train`. That is expected on a
+trial run, not a failure.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Step 2: `ee.Initialize()` fails | Earth Engine needs both a login and a registered Cloud project. See **Setup** above. |
+| Step 3: `Could not load Koppen raster` / `Could not load continents` | The upstream download failed. The run continues and the catalog is still built, but the `climate` (or `continent`) column is left empty for every event; Step 5 balances the split per continent. Re-run Step 3 once the download succeeds and it fills the column in place. |
+| Step 3: an event is missing from the catalog | An event missing a *core* layer is excluded by design and listed in `3_missing_layers_report.csv`. The usual cause is `S2_indices` marked `NA` in `2_gee_export_status.csv`, meaning Earth Engine held no Sentinel-2 scene for that AOI and window. |
+| Step 4: `no GEE export, skipped` | Step 2 has not completed for that event, or Step 3 has not yet catalogued it. |
+| Step 4: an event yields 0 patches | The AOI is smaller than one 2.56 km patch in some direction. Reported per event and safe to ignore. |
+| A step stops partway | Re-run the same command. Steps 1, 2 and 4 resume from what is already on disk. |
 
 ---
 
