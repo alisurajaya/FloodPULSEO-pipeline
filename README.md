@@ -12,7 +12,7 @@ FloodPULSEO is a machine-learning-ready dataset that pairs **566,669** co-regist
 |---|---|---|---|
 | Sentinel-1 SAR | `COPERNICUS/S1_GRD` | 10 m | VV, VH |
 | Sentinel-2 indices | `COPERNICUS/S2_SR_HARMONIZED` | 10 m | NDVI, NDBI |
-| MERIT Hydro | `MERIT/Hydro/v1_0_1` | 90 m | elevation, flow direction, UDA, HAND |
+| MERIT Hydro † | `MERIT/Hydro/v1_0_1` | 90 m | elevation, flow direction, UDA, HAND |
 | SoilGrids | `projects/soilgrids-isric` | 250 m | clay %, sand % |
 | ESA WorldCover | `ESA/WorldCover/v200` | 10 m | permanent-water mask |
 | Precipitation | `NASA/GPM_L3/IMERG_V07` | ~11 km | 30 daily (mm/day) |
@@ -25,6 +25,7 @@ Every input precedes the flood, so the dataset poses flood **prediction** from a
 
 ---
 
+† Not redistributed. The MERIT-derived patches are rebuilt locally — see [MERIT Hydro layers are not redistributed](#merit-hydro-layers-are-not-redistributed).
 
 ## Coverage
 
@@ -36,12 +37,12 @@ Events span 2017-2025 across six continents and all five Köppen climate zones, 
 
 ## Dataset description
 
-The dataset is delivered as patches. Each flood event is cut into square, non-overlapping tiles that each cover a 2.56 km × 2.56 km ground footprint. **One patch is five GeoTIFFs: four input files and one flood-label file.** The four input files hold the layers above, grouped by resolution, and the label file holds the CEMS flood mask.
+The dataset is delivered as patches. Each flood event is cut into square, non-overlapping tiles that each cover a 2.56 km × 2.56 km ground footprint. **One patch is five GeoTIFFs: four input files and one flood-label file.** The four input files hold the layers above, grouped by resolution, and the label file holds the CEMS flood mask. Four of the five are in the published download; `input_80m.tif` is rebuilt locally from MERIT Hydro.
 
 | File | Bands | Size | Contents |
 |---|---|---|---|
 | `input_10m.tif` | 5 | 256×256 | S1 VV, S1 VH, NDVI, NDBI, permanent water |
-| `input_80m.tif` | 5 | 32×32 | MERIT elevation, flow-dir sin, flow-dir cos, UDA, HAND |
+| `input_80m.tif` † | 5 | 32×32 | MERIT elevation, flow-dir sin, flow-dir cos, UDA, HAND |
 | `input_160m.tif` | 2 | 16×16 | ISRIC SoilGrids v2.0 clay %, sand % |
 | `input_2560m.tif` | 2N | 1×1 | precipitation (N days), soil moisture (N days) |
 | `flood_mask.tif` | 1 | 256×256 | flood label (1 = flooded) |
@@ -49,6 +50,23 @@ The dataset is delivered as patches. Each flood event is cut into square, non-ov
 Only the 10 m layers are kept at their native resolution, as a 256×256 grid. The other layers are resampled so they integrate into a single multi-modal stack: each file covers exactly the same 2.56 km × 2.56 km footprint, sampled to the grid that matches its resolution. All four grids share one origin and use exact 10 m, 80 m, 160 m and 2560 m pixels, so the four stacks and the label are pixel-aligned: a given position in `input_10m` maps to the containing cell of every coarser file. Precipitation and soil moisture reduce to one cell per tile, one value per antecedent day, so `input_2560m` holds 2N bands. The released dataset uses 30 antecedent days, giving 60 bands, 30 precipitation days followed by 30 soil-moisture days. The number of days N is configurable in the pipeline (Section below), so a newly prepared dataset can use a different window.
 
 The permanent-water band lets a model tell pre-existing water from new flooding, while the label stays the observed CEMS inundation alone. MERIT flow direction is split into the sine and cosine of its compass angle so the circular variable has no discontinuity.
+
+### MERIT Hydro layers are not redistributed
+
+`input_80m.tif` is not in the published dataset. MERIT Hydro is released under CC BY-NC 4.0 / ODbL 1.0. Resampling and cropping it produces a derivative rather than an independent product, so the derived patches stay under MERIT's licence and cannot be redistributed under the CC BY 4.0 that covers the rest of FloodPULSEO.
+
+`MERIT_data_prep/` rebuilds them from MERIT Hydro:
+
+```bash
+python MERIT_data_prep/1_download_merit.py --out merit_raw
+python MERIT_data_prep/2_make_merit_patches.py --merit merit_raw --patches patches
+```
+
+Step 1 fetches one `MERIT.tif` per event on that event's own AOI footprint, so the cost is one Earth Engine request per event (1,565) rather than one per patch. Re-running skips events already downloaded, so an interrupted run resumes. Step 2 cuts each one to the patch grid and writes `patch_NNNN_input_80m.tif` beside the other patch files; `--verify` checks existing patches without writing.
+
+The grid geometry comes from `merit_event_grid.csv`, shipped beside the scripts, one row per event. It holds only FloodPULSEO's own tiling coordinates, so it carries no MERIT content. Because the patches are cut on that same grid, the rebuilt files reproduce the ones the paper describes; `--verify` re-checks existing patches against it without writing.
+
+You obtain MERIT Hydro under its own licence. It is not FloodPULSEO data.
 
 ### Patch index and splits
 
@@ -214,7 +232,7 @@ data/
   patches/
     {EMSR}/{folder_name}/     2.56 km tiles, 5 GeoTIFFs per patch
       patch_NNNN_input_10m.tif      5 bands   256x256  S1 VV, S1 VH, NDVI, NDBI, permanent water
-      patch_NNNN_input_80m.tif      5 bands   32x32    MERIT elev, flowdir sin/cos, UDA, HAND
+      patch_NNNN_input_80m.tif      5 bands   32x32    MERIT elev, flowdir sin/cos, UDA, HAND (rebuilt locally)
       patch_NNNN_input_160m.tif     2 bands   16x16    clay, sand
       patch_NNNN_input_2560m.tif    2N bands  1x1      precipitation (N days) then soil moisture (N days)
       patch_NNNN_flood_mask.tif     1 band    256x256  CEMS flood label
@@ -262,13 +280,13 @@ The columns are below.
 
 ## Data sources and credits
 
-Flood labels and event metadata come from the [Copernicus Emergency Management Service Rapid Mapping](https://emergency.copernicus.eu/) service. The satellite and geospatial layers are accessed through [Google Earth Engine](https://earthengine.google.com/): Sentinel-1 and Sentinel-2 (ESA/Copernicus), MERIT Hydro, ISRIC SoilGrids v2.0, ESA WorldCover, GPM IMERG and SMAP (NASA). Basin boundaries are HydroBASINS Pfafstetter Level-5, and climate zones follow the Köppen-Geiger classification.
+Flood labels and event metadata come from the [Copernicus Emergency Management Service Rapid Mapping](https://emergency.copernicus.eu/) service. The satellite and geospatial layers are accessed through [Google Earth Engine](https://earthengine.google.com/): Sentinel-1 and Sentinel-2 (ESA/Copernicus), MERIT Hydro, ISRIC SoilGrids v2.0, ESA WorldCover, GPM IMERG and SMAP (NASA). MERIT Hydro is CC BY-NC 4.0 / ODbL 1.0 and is not redistributed with the dataset; every other layer is redistributed under CC BY 4.0. Basin boundaries are HydroBASINS Pfafstetter Level-5, and climate zones follow the Köppen-Geiger classification.
 
 ## Citation
 
-A data paper describing FloodPULSEO is in preparation. Until it appears, please cite the Zenodo record.
+A data paper describing FloodPULSEO is in preparation. Until it appears, please cite the Harvard Dataverse record.
 
 ```
-[Zenodo citation to be added]
+[Dataverse citation to be added]
 ```
 
